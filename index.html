@@ -834,12 +834,7 @@ function loop(ts) {
   requestAnimationFrame(loop);
   checkOpenMode();
   if (!S.wizardDone && !S.project && !S.gantry) {
-    setTimeout(function () { wzOpen(); }, 300);
-  }
-  if (isWeChat()) {
-    showNotice('微信里打不开相机、也加不了桌面。请点右上角 “…” → 在浏览器打开');
-  } else if (isInApp()) {
-    showNotice('当前是应用内浏览器，相机可能被限制。建议用 Chrome / Safari 打开');
+    setTimeout(function () { wzOpen(); }, 400);
   }
   if (ts - lastFrame < 33) return;
   lastFrame = ts;
@@ -1757,6 +1752,8 @@ function wzSync() {
   if (h) h.textContent = WZ.h.toFixed(1);
 }
 function wzOpen() {
+  var w0 = document.getElementById('wiz');
+  if (w0 && w0.classList.contains('show')) return;   // 已经开着就别重建
   WZ.model = S.model; WZ.h = S.h; WZ.trig = S.trig; WZ.grade = S.grade; WZ.mount = S.mount;
   wzBuild();
   document.getElementById('wiz').classList.add('show');
