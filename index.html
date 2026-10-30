@@ -157,7 +157,7 @@ h3{font-size:12px;color:var(--sub);font-weight:600;margin:18px 0 8px;letter-spac
 .wiz{position:fixed;inset:0;z-index:80;background:rgba(5,8,12,.94);display:none;
   align-items:center;justify-content:center;padding:16px}
 .wiz.show{display:flex}
-.wizbox{width:100%;max-width:460px;background:#0f151d;border:1px solid #22303f;border-radius:16px;
+.wizbox{width:100%;max-width:460px;background:#0f151d;display:flex;flex-direction:column;max-height:92vh;border:1px solid #22303f;border-radius:16px;
   padding:18px 16px 14px;box-shadow:0 20px 60px rgba(0,0,0,.6);max-height:92vh;overflow:auto}
 .wizbox h2{font-size:14px;margin:0 0 12px;color:#e8eef5}
 .wizbox label{display:block;font-size:11px;color:#8b9aab;margin:12px 0 6px}
@@ -181,6 +181,8 @@ h3{font-size:12px;color:var(--sub);font-weight:600;margin:18px 0 8px;letter-spac
 .wizdots{display:flex;gap:5px}
 .wizdots i{width:6px;height:6px;border-radius:50%;background:#31424f}
 .wizdots i.on{background:#2f81f7}
+.wzscroll{overflow-y:auto;min-height:0;flex:1 1 auto;-webkit-overflow-scrolling:touch}
+.wzgo{flex:0 0 auto;width:100%;margin-top:12px;padding:15px;border-radius:12px;border:none;background:linear-gradient(180deg,#2f81f7,#1d63d2);color:#fff;font-size:15px;font-weight:700;font-family:inherit;letter-spacing:1px}
 .wizok{font-size:11.5px;color:#9fb2c6;line-height:1.8;margin:8px 0 0}
 .wizok b{color:#4ade80}
 /* 安装提示条 */
@@ -369,12 +371,8 @@ html.advon .advblock{display:block}
 </div>
 <div class="wiz" id="wiz">
   <div class="wizbox">
-    <div id="wzBody"></div>
-    <div class="wiznav">
-      <button id="wzBack">上一步</button>
-      <span class="wizdots" id="wzDots"></span>
-      <button id="wzNext">下一步</button>
-    </div>
+    <div class="wzscroll" id="wzBox"></div>
+    <button id="wzGo" class="wzgo">开始测量</button>
   </div>
 </div>
 <div id="installBar">
@@ -1718,102 +1716,90 @@ function checkOpenMode() {
   return false;
 }
 
-/* ---------------- 首次使用向导 ---------------- */
-var WZ = { step: 0, trig: 20, grade: 0, mount: 'jig', h: 7.5, model: 'TJ156' };
+/* ---------------- 首次使用向导（单屏） ---------------- */
+var WZ = { model: 'TJ156', h: 7.5, trig: 20, grade: 0, mount: 'jig' };
 
-function wzRender() {
-  var body = document.getElementById('wzBody');
-  var html = '';
-  if (WZ.step === 0) {
-    html += '<h2>第 1 步 / 4 · 这盏灯是哪个型号？</h2><div class="lampgrid" id="wzLamps"></div>';
-  } else if (WZ.step === 1) {
-    html += '<h2>第 2 步 / 4 · 现场三个数</h2>';
-    html += '<label>灯高（灯口到路面，米）</label><div class="numrow">' +
-            '<button data-h="-0.1">−</button><b id="wzH">' + WZ.h.toFixed(1) + '</b><button data-h="0.1">＋</button></div>';
-    html += '<label>抓拍触发距离（相机里配的）</label><div class="chips" id="wzTrig">' +
-            [16, 18, 20, 22].map(function (v) {
-              return '<button data-t="' + v + '" class="' + (v === WZ.trig ? 'on' : '') + '">' + v + ' m</button>';
-            }).join('') + '</div>';
-    html += '<label>路面纵坡（不知道就选 0）</label><div class="chips" id="wzGrade">' +
-            [0, 1, 2, 3].map(function (v) {
-              return '<button data-g="' + v + '" class="' + (v === WZ.grade ? 'on' : '') + '">' + v + ' %</button>';
-            }).join('') + '</div>';
-  } else if (WZ.step === 2) {
-    html += '<h2>第 3 步 / 4 · 手机怎么固定？</h2><div class="mountrow" id="wzMount">' +
-            '<button data-m="jig" class="' + (WZ.mount === 'jig' ? 'on' : '') + '">灯口工装<br><small>最准</small></button>' +
-            '<button data-m="shell" class="' + (WZ.mount === 'shell' ? 'on' : '') + '">贴壳对齐<br><small>一般</small></button>' +
-            '<button data-m="hand" class="' + (WZ.mount === 'hand' ? 'on' : '') + '">手持<br><small>仅参考</small></button>' +
-            '</div><p class="wizok">没有工装也能用，但精度会降。工装是夹在灯口上的小支架，建议随设备配一套。</p>';
-  } else {
-    var L = LAMPS.filter(function (x) { return x.id === WZ.model; })[0] || LAMPS[0];
-    var Ds = WZ.trig + 4;
-    var th = Math.atan(7.5 / Math.sqrt((L.dx || 0) * (L.dx || 0) + Ds * Ds) + WZ.grade / 100) * R2D;
-    html += '<h2>第 4 步 / 4 · 可以开始了</h2>';
-    html += '<p class="wizok">灯型 <b>' + L.name + '</b><br>' +
-            '灯高 <b>' + WZ.h.toFixed(1) + ' m</b>　触发 <b>' + WZ.trig + ' m</b>　目标 <b>' + Ds + ' m</b>　纵坡 <b>' + WZ.grade + ' %</b><br>' +
-            '目标俯仰角 <b>' + th.toFixed(2) + '°</b>' + (Math.abs(L.dx || 0) > 0.1 ? '　偏航 <b>' + (Math.atan((L.dx || 0) / Ds) * R2D).toFixed(1) + '°</b>' : '') +
-            '</p>';
-    html += '<p class="wizok" style="margin-top:10px">① 把手机固定好，屏幕朝自己<br>' +
-            '② 点“开始测量”，允许相机与运动权限<br>' +
-            '③ 先左右把<b>蓝色虚线</b>对到准星，再上下把<b>橙色目标线</b>压到准星<br>' +
-            '④ 变绿响一声 → 点“锁定记录”</p>';
+function wzBuild() {
+  var lamps = LAMPS.filter(function (m) { return m.id !== 'CUSTOM'; });
+  var html = '<h2>快速设置 <span style="font-size:10px;color:#6f7f90;font-weight:400">约 20 秒</span></h2>';
+  html += '<label>① 这盏灯是哪个型号？</label><div class="lampgrid" id="wzLamps">';
+  for (var i = 0; i < lamps.length; i++) {
+    var m = lamps[i];
+    html += '<button data-m="' + m.id + '"><b>' + m.name + '</b>' + (m.note || '') + '</button>';
   }
-  body.innerHTML = html;
-  document.getElementById('wzDots').innerHTML = [0, 1, 2, 3].map(function (i) {
-    return '<i class="' + (i === WZ.step ? 'on' : '') + '"></i>';
-  }).join('');
-  document.getElementById('wzBack').style.visibility = WZ.step === 0 ? 'hidden' : 'visible';
-  document.getElementById('wzNext').textContent = WZ.step === 3 ? '进入测量' : '下一步';
-
-  if (WZ.step === 0) {
-    var box = document.getElementById('wzLamps');
-    box.innerHTML = LAMPS.filter(function (m) { return m.id !== 'CUSTOM'; }).map(function (m) {
-      return '<button data-m="' + m.id + '" class="' + (m.id === WZ.model ? 'on' : '') + '"><b>' +
-             (m.name || m.id) + '</b>' + (m.note || '') + '</button>';
-    }).join('') + '<button data-m="CUSTOM" class="' + (WZ.model === 'CUSTOM' ? 'on' : '') + '"><b>其它 / 不清楚</b>先按默认，之后在设置里改</button>';
-    box.addEventListener('click', function (e) {
-      var b = e.target.closest('button'); if (!b) return;
-      WZ.model = b.getAttribute('data-m');
-      wzRender();
-    });
-  }
-  if (WZ.step === 1) {
-    body.querySelectorAll('[data-h]').forEach(function (b) {
-      b.addEventListener('click', function () {
-        WZ.h = Math.max(4, Math.min(14, +(WZ.h + parseFloat(b.getAttribute('data-h'))).toFixed(1)));
-        wzRender();
-      });
-    });
-    body.querySelectorAll('[data-t]').forEach(function (b) {
-      b.addEventListener('click', function () { WZ.trig = +b.getAttribute('data-t'); wzRender(); });
-    });
-    body.querySelectorAll('[data-g]').forEach(function (b) {
-      b.addEventListener('click', function () { WZ.grade = +b.getAttribute('data-g'); wzRender(); });
-    });
-  }
-  if (WZ.step === 2) {
-    body.querySelectorAll('[data-m]').forEach(function (b) {
-      b.addEventListener('click', function () { WZ.mount = b.getAttribute('data-m'); wzRender(); });
-    });
-  }
+  html += '</div>';
+  html += '<label>② 灯高（灯口到路面，米）</label>' +
+          '<div class="numrow"><button data-h="-0.1">−</button><b id="wzH">7.5</b><button data-h="0.1">＋</button></div>';
+  html += '<label>③ 抓拍触发距离</label><div class="chips" id="wzTrig">' +
+          [16, 18, 20, 22].map(function (v) { return '<button data-t="' + v + '">' + v + ' m</button>'; }).join('') + '</div>';
+  html += '<label>④ 路面纵坡（不知道选 0）</label><div class="chips" id="wzGrade">' +
+          [0, 1, 2, 3].map(function (v) { return '<button data-g="' + v + '">' + v + ' %</button>'; }).join('') + '</div>';
+  html += '<label>⑤ 手机怎么固定</label><div class="mountrow" id="wzMount">' +
+          '<button data-o="jig">灯口工装<br><small>最准</small></button>' +
+          '<button data-o="shell">贴壳<br><small>一般</small></button>' +
+          '<button data-o="hand">手持<br><small>参考</small></button></div>';
+  document.getElementById('wzBox').innerHTML = html;
+  wzSync();
 }
-function wzOpen() { WZ.step = 0; document.getElementById('wiz').classList.add('show'); wzRender(); }
+function wzSync() {
+  var q = function (sel, attr, val) {
+    var els = document.querySelectorAll(sel);
+    for (var i = 0; i < els.length; i++) {
+      if (els[i].getAttribute(attr) === val) els[i].classList.add('on');
+      else els[i].classList.remove('on');
+    }
+  };
+  q('#wzLamps button', 'data-m', WZ.model);
+  q('#wzTrig button', 'data-t', String(WZ.trig));
+  q('#wzGrade button', 'data-g', String(WZ.grade));
+  q('#wzMount button', 'data-o', WZ.mount);
+  var h = document.getElementById('wzH');
+  if (h) h.textContent = WZ.h.toFixed(1);
+}
+function wzOpen() {
+  WZ.model = S.model; WZ.h = S.h; WZ.trig = S.trig; WZ.grade = S.grade; WZ.mount = S.mount;
+  wzBuild();
+  document.getElementById('wiz').classList.add('show');
+}
 function wzClose() { document.getElementById('wiz').classList.remove('show'); }
 function wzApply() {
   S.model = WZ.model;
-  var m = LAMPS.filter(function (x) { return x.id === WZ.model; })[0];
-  if (m) { S.beamV = m.bv; S.beamH = m.bh; S.lampType = m.type || 'steady'; if (m.dx !== undefined) S.dx = m.dx; }
+  var m = null, i;
+  for (i = 0; i < LAMPS.length; i++) if (LAMPS[i].id === WZ.model) m = LAMPS[i];
+  if (m) {
+    S.beamV = m.bv; S.beamH = m.bh; S.lampType = m.type || 'steady';
+    if (m.dx !== undefined) S.dx = m.dx;
+  }
   S.h = WZ.h; S.trig = WZ.trig; S.grade = WZ.grade; S.mount = WZ.mount;
   S.wizardDone = 1;
-  saveCfg(); fillSettings(); refreshMeta();
+  saveCfg();
+  try { fillSettings(); refreshMeta(); } catch (e) {}
+  wzClose();
+  showPage('measure');
+  toast('设置好了，点“开始测量”即可', 3000);
 }
-document.getElementById('wzNext').addEventListener('click', function () {
-  if (WZ.step < 3) { WZ.step++; wzRender(); return; }
-  wzApply(); wzClose(); showPage('measure');
-  toast('已按向导设置好，点“开始测量”即可', 3000);
-});
-document.getElementById('wzBack').addEventListener('click', function () {
-  if (WZ.step > 0) { WZ.step--; wzRender(); }
+
+// 整个向导只绑一次监听，永远不受重绘影响
+document.getElementById('wiz').addEventListener('click', function (e) {
+  var t = e.target;
+  while (t && t !== this && t.tagName !== 'BUTTON') t = t.parentNode;
+  if (!t || t === this) return;
+  try {
+    if (t.id === 'wzGo') { wzApply(); return; }
+    var v;
+    v = t.getAttribute('data-h');
+    if (v) { WZ.h = Math.max(4, Math.min(14, +(WZ.h + parseFloat(v)).toFixed(1))); wzSync(); return; }
+    v = t.getAttribute('data-t');
+    if (v) { WZ.trig = +v; wzSync(); return; }
+    v = t.getAttribute('data-g');
+    if (v) { WZ.grade = +v; wzSync(); return; }
+    v = t.getAttribute('data-o');
+    if (v) { WZ.mount = v; wzSync(); return; }
+    v = t.getAttribute('data-m');
+    if (v) { WZ.model = v; wzSync(); return; }
+  } catch (err) {
+    toast('出错了：' + err.message, 4000);
+  }
 });
 
 /* ---------------- 安装到桌面 / 离线 ---------------- */
@@ -1830,6 +1816,8 @@ function showNotice(msg) {
   bar.style.color = '#ffd9a3';
 }
 function showInstall(msg, withBtn) {
+  var wz = document.getElementById('wiz');
+  if (wz && wz.classList.contains('show')) return;   // 向导期间不打扰
   var bar = document.getElementById('installBar');
   document.getElementById('installMsg').textContent = msg;
   document.getElementById('installGo').style.display = withBtn ? 'inline-block' : 'none';
