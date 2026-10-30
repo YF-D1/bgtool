@@ -130,6 +130,11 @@ h3{font-size:12px;color:var(--sub);font-weight:600;margin:18px 0 8px;letter-spac
 #hud3{position:absolute;inset:0;pointer-events:none;padding:10px 12px;
   display:flex;flex-direction:column;justify-content:space-between}
 #hud3 .chip{pointer-events:auto}
+#manRow{display:none;gap:6px;align-items:center;padding:6px 14px 0}
+#manRow.show{display:flex}
+#manRow .mlabel{font-size:10.5px;color:#8b9aab;margin-right:2px;flex:0 0 auto}
+#manRow button{flex:1;padding:8px 0;border-radius:9px;border:1px solid #2a3949;background:#151d27;
+  color:#cfe0f0;font-size:12.5px;font-family:inherit}
 /* 开关 */
 .switch{display:flex;align-items:center;justify-content:space-between;background:#141b24;
   border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0;font-size:12px;color:#c9d6e3}
@@ -237,6 +242,13 @@ html.advon .advblock{display:block}
     </div>
   </div>
 
+  <div id="manRow">
+    <span class="mlabel">手动微调</span>
+    <button data-da="-1">−1°</button>
+    <button data-da="-0.1">−0.1°</button>
+    <button data-da="0.1">+0.1°</button>
+    <button data-da="1">+1°</button>
+  </div>
   <div id="actbar">
     <button id="btnSpot" class="btn ghost">光斑<br>比对</button>
     <button id="primary">开始测量</button>
@@ -689,8 +701,12 @@ function upVector(alpha, beta, gamma) {
   var uz = cb * cg;
   return [ux, uy, uz];
 }
+var SENS = { n: 0, last: 0, t0: 0, dead: false, m: 0, mlast: 0,
+             raw: '', mraw: '', src: '' };
 function onOrient(e) {
   if (e.alpha === null || e.beta === null) return;
+  SENS.n++; SENS.last = performance.now(); SENS.dead = false; SENS.src = 'orientation';
+  SENS.raw = 'a' + Math.round(e.alpha) + ' b' + Math.round(e.beta) + ' g' + Math.round(e.gamma);
   var u = upVector(e.alpha || 0, e.beta || 0, e.gamma || 0);
   // 后置相机光轴 = 设备 -Z；俯角 = asin(uz)
   var dep = Math.asin(Math.max(-1, Math.min(1, u[2]))) * R2D;
@@ -701,6 +717,34 @@ function onOrient(e) {
   document.getElementById('chipRoll').textContent = '横滚 ' + S.roll.toFixed(1) + '°';
   if (Math.abs(S.roll) > 2) document.getElementById('chipRoll').style.color = '#f59e0b';
   else document.getElementById('chipRoll').style.color = '';
+}
+function onMotion(e) {
+  var g = e.accelerationIncludingGravity;
+  if (!g || g.x === null) return;
+  var ax = g.x, ay = g.y, az = g.z;
+  var n = Math.sqrt(ax * ax + ay * ay + az * az);
+  if (n < 0.5) return;
+  var uz = -az / n, ux = -ax / n;
+  var dep = Math.asin(Math.max(-1, Math.min(1, uz))) * R2D;
+  SENS.m++; SENS.mlast = performance.now();
+  SENS.mraw = 'x' + ax.toFixed(1) + ' y' + ay.toFixed(1) + ' z' + az.toFixed(1);
+  if (performance.now() - SENS.last < 500) return;   // 方向传感器正常时优先用它
+  SENS.src = 'motion';
+  S.pitch = dep - S.bias;
+  S.roll = Math.asin(Math.max(-1, Math.min(1, ux))) * R2D;
+  var cr = document.getElementById('chipRoll');
+  if (cr) cr.textContent = '横滚 ' + S.roll.toFixed(1) + '°';
+}
+function listenMotion() {
+  if (typeof DeviceMotionEvent === 'undefined') return;
+  var attach = function () { window.addEventListener('devicemotion', onMotion, true); };
+  if (typeof DeviceMotionEvent.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission().then(function (r) { if (r === 'granted') attach(); }).catch(function () {});
+  } else { attach(); }
+}
+function startSensors() {
+  listenOrientation();
+  listenMotion();
 }
 function listenOrientation() {
   if (typeof DeviceOrientationEvent === 'undefined') { toast('设备不支持方向传感器'); return; }
@@ -844,6 +888,20 @@ function loop(ts) {
 
   drawOverlay();
   updateHUD();
+  sensWatchdog(ts);
+}
+var lastSensCheck = 0;
+function sensWatchdog(now) {
+  if (now - lastSensCheck < 800) return;
+  lastSensCheck = now;
+  if (!S.running || S.sim) return;
+  if (S.pitch === null) return;
+  var lastAny = Math.max(SENS.last || 0, SENS.mlast || 0);
+  if (lastAny && now - lastAny < 1500) return;
+  S.simPitch = S.pitch; S.pitch = null; SENS.dead = true; SENS.src = 'none';
+  var c = document.getElementById('chipSrc');
+  if (c) c.textContent = '手动';
+  toast('没收到手机的姿态数据：已切到手动模式，上下拖动画面调角度', 6000);
 }
 function updateHUD() {
   var p = curAng(), t = targetAng(), Ds = S.trig + S.k;
@@ -860,8 +918,15 @@ function updateHUD() {
   var pct = Math.max(-1, Math.min(1, d / 1.0));
   var bar = document.getElementById('barCur');
   bar.style.left = (50 + pct * 46) + '%';
+  var mr = document.getElementById('manRow');
+  var manual = (S.pitch === null && S.running);
+  if (mr) mr.classList.toggle('show', manual);
+  if (manual) { var ib = document.getElementById('installBar'); if (ib) ib.classList.remove('show'); }
   var bt = document.getElementById('barTxt');
-  if (Math.abs(d) <= 0.03) { bt.textContent = '已对准'; bt.style.color = '#4ade80'; }
+  if (S.pitch === null) {
+    bt.textContent = '手动模式：上下拖动画面调角度';
+    bt.style.color = '#fbbf24';
+  } else if (Math.abs(d) <= 0.03) { bt.textContent = '已对准'; bt.style.color = '#4ade80'; }
   else if (d > 0) { bt.textContent = '↑ 上抬 ' + d.toFixed(1) + '°'; bt.style.color = '#fbbf24'; }
   else { bt.textContent = '↓ 下压 ' + (-d).toFixed(1) + '°'; bt.style.color = '#fbbf24'; }
   document.getElementById('barZone').style.background = Math.abs(d) < 0.34 ? 'rgba(34,197,94,.3)' : 'rgba(34,197,94,.15)';
@@ -1186,7 +1251,7 @@ function bindUI() {
       document.getElementById('primary').textContent = '测量中… 点此锁定';
       document.getElementById('primary').classList.remove('armed');
       if (S.sim) { toast('模拟模式：上下拖动画面调整灯轴角度'); }
-      else { startCamera(); listenOrientation(); requestWakeLock(); }
+      else { startCamera(); startSensors(); requestWakeLock(); }
     } else {
       lockRecord();
     }
@@ -1208,6 +1273,16 @@ function bindUI() {
 
   document.getElementById('btnSpot').addEventListener('click', spotMode);
   document.getElementById('btnExportCsv').addEventListener('click', exportCsv);
+document.getElementById('manRow').addEventListener('click', function (e) {
+  var t = e.target;
+  while (t && t !== this && t.tagName !== 'BUTTON') t = t.parentNode;
+  if (!t || t === this) return;
+  var d = parseFloat(t.getAttribute('data-da'));
+  if (!isNaN(d)) {
+    S.simPitch = Math.max(2, Math.min(80, (S.simPitch || 17) + d));
+    toast('手动角度 ' + S.simPitch.toFixed(1) + '°', 1200);
+  }
+});
 document.getElementById('btnCopySum').addEventListener('click', function () {
   var a = loadRecs();
   if (!a.length) { toast('没有记录'); return; }
@@ -1324,6 +1399,15 @@ function refreshDiag() {
   lines.push((secure ? '✅' : '❌') + ' https：' + (secure ? '是' : '否（相机必然打不开）'));
   lines.push((hasApi ? '✅' : '❌') + ' 相机接口：' + (hasApi ? '有' : '无（换 Chrome / Safari）'));
   lines.push((navigator.onLine ? '✅' : '⚠️') + ' 网络：' + (navigator.onLine ? '在线' : '离线（已缓存可继续用）'));
+  var nowT = performance.now();
+  var oAlive = SENS.last && (nowT - SENS.last < 1500);
+  var mAlive = SENS.mlast && (nowT - SENS.mlast < 1500);
+  lines.push((oAlive ? '✅' : (SENS.n ? '⚠️' : '❌')) + ' 方向传感器：' + SENS.n + ' 帧' +
+             (SENS.raw ? '（' + SENS.raw + '）' : ''));
+  lines.push((mAlive ? '✅' : (SENS.m ? '⚠️' : '❌')) + ' 加速度计：' + SENS.m + ' 帧' +
+             (SENS.mraw ? '（' + SENS.mraw + '）' : ''));
+  lines.push('ℹ️ 当前使用：' + (SENS.src === 'orientation' ? '方向传感器' :
+             SENS.src === 'motion' ? '加速度计（兜底）' : SENS.src === 'none' ? '手动' : '未开始'));
   if (camErrText) lines.push('❌ 相机：' + camErrText);
   else if (S.videoReady) lines.push('✅ 相机：已就绪');
   else lines.push('ℹ️ 相机：未启动');
